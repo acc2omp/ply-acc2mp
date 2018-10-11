@@ -18,7 +18,12 @@ reserved = {
         'vector'      : 'VECTOR',
         'collapse'    : 'COLLAPSE',
         'reduction'   : 'REDUCTION',
-        'independent' : 'INDEPENDENT'
+        'independent' : 'INDEPENDENT',
+        'copy'        : 'COPY',
+        'copyin'      : 'COPYIN',
+        'copyout'     : 'COPYOUT',
+        'create'      : 'CREATE',
+        'data'        : 'DATA'
 }
 tokens = [
 # Shoudn`t be on anything rules
@@ -30,7 +35,13 @@ tokens = [
     'ID',
     'LPAREN',
     'RPAREN',
+#    'LBRACE',
+#    'RBRACE',
+    'RBRACKET',
+    'LBRACKET',
     'BACKSLASH',
+    'SPACE',
+    'TAB',
 
 # OPERATIORS
     'SUM',
@@ -79,7 +90,20 @@ def t_BACKSLASH(t):
     r'\\'
     if t.lexer.in_pragma > 0:
         t.lexer.in_pragma += 1
+    # Output the BACKSLASH token only if lexer not in a pragma
     else:
+        return t
+
+def t_SPACE(t):
+    r'\s'
+    # Output the SPACE token only if lexer not in a pragma
+    if t.lexer.in_pragma == 0:
+        return t
+
+def t_TAB(t):
+    r'\t'
+    # Output the TAB token only if lexer not in a pragma
+    if t.lexer.in_pragma == 0:
         return t
 
 def t_SUM(t):
@@ -126,6 +150,22 @@ def t_RPAREN(t):
     r'\)'
     return t
 
+#def t_LBRACE(t):
+#    r'{'
+#    return t
+#
+#def t_RBRACE(t):
+#    r'}'
+#    return t
+#
+def t_LBRACKET(t):
+    r'\['
+    return t
+
+def t_RBRACKET(t):
+    r'\]'
+    return t
+
 def t_COLON(t):
     r':'
     return t
@@ -139,7 +179,7 @@ def t_OTHER(t):
     return t
 
 # Ignored characters
-t_ignore = " \t"
+#t_ignore = ""
     
 def t_error(t):
     print("Illegal character '%s'" % t.value[0])

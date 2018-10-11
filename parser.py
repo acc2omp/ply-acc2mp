@@ -22,11 +22,19 @@ precedence = (
 
 ######################## BEGIN AUXILIARIES PRODUCTIONS ########################
 
-def p_file(t):
-    '''file : lines'''
+def p_program(t):
+    '''program : lines'''
     t[0] = t[1]
-    print(t[0])
-    print(" ".join(t[0]).replace('\n ', '\n'))
+    #print(t[0])
+    print(" ".join(t[0]).replace('\n ', '\n').replace('  ', ' '))
+
+#def p_structured_block_list(t):
+#    '''structured_block_list : structured_block structured_block_list
+#                             | '''
+#    if len(t) == 3:
+#        t[0] = t[1] + t[2]
+#    else:
+#        t[0] = []
 
 def p_lines(t):
     '''lines : ignored_line lines
@@ -52,11 +60,20 @@ def p_anything(t):
                 | COLLAPSE anything
                 | REDUCTION anything
                 | INDEPENDENT anything
+                | COPY anything
+                | COPYIN anything
+                | COPYOUT anything
+                | DATA anything
+                | CREATE anything
                 | INT anything
                 | ID anything
                 | LPAREN anything
                 | RPAREN anything
+                | RBRACKET anything
+                | LBRACKET anything
                 | BACKSLASH anything
+                | SPACE anything
+                | TAB anything
                 | SUM anything
                 | MUL anything
                 | MAX anything
@@ -75,8 +92,16 @@ def p_anything(t):
         t[0] = []
 
 def p_pragma(t):
-    'pragma : BPRAGMA ACC construct EPRAGMA'
-    t[0] = ['#pragma omp'] + t[3] + ['\n']
+    'pragma : spaces BPRAGMA ACC construct EPRAGMA'
+    t[0] = t[1] + ['#pragma omp'] + t[4] + ['\n']
+
+def p_spaces(t):
+    '''spaces : SPACE spaces
+              | '''
+    if len(t) == 3:
+        t[0] = [' '] + t[2]
+    else:
+        t[0] = []
 
 # Return: List of strings, each string is a clause
 def p_clause_list(t):
@@ -92,6 +117,31 @@ def p_clause_list(t):
 def p_var_list(t):
     '''var_list : ID
                 | var_list COMMA ID'''
+    if len(t) == 2:
+        t[0] = [t[1]]
+    if len(t) == 4:
+        t[0] = t[1] + [t[3]]
+
+# Return: String that represent the value
+def p_value(t):
+    '''value : ID 
+             | INT'''
+    t[0] = t[1]
+
+# Return: String that represent the subarray
+def p_subarray(t):
+    '''subarray : ID LBRACKET value COLON value RBRACKET'''
+    t[0] = t[1] + '[' + t[3] + ':' + t[5] + ']'
+
+def p_data_var(t):
+    '''data_var : subarray
+                | ID'''
+    t[0] = t[1]
+
+# Return: List of strings, each string is a variable or a subarray
+def p_data_var_list(t):
+    '''data_var_list : data_var
+                     | data_var_list COMMA data_var'''
     if len(t) == 2:
         t[0] = [t[1]]
     if len(t) == 4:
@@ -124,16 +174,22 @@ def p_construct_loop(t):
     else:
         t[0] = ['for']
 
+def p_construct_data(t):
+    '''construct : DATA clause_list''' 
+    t[0] = ['target data'] + t[2]
+
 #def p_construct_kernels(t):
 #    'construct : KERNELS clause_list'
 #    t[0] = ['BLABLABLA'] + t[2]
 
 ################################ BEGIN CLAUSES ################################
 
+# Return: List with a single string
 def p_clause_num_workers(t):
     'clause : NUM_WORKERS LPAREN INT RPAREN'
     t[0] = ['num_threads(' + t[3] + ')']
 
+# Return: List with a single string
 def p_clause_vector(t):
     '''clause : VECTOR LPAREN INT RPAREN
               | VECTOR'''
@@ -142,14 +198,17 @@ def p_clause_vector(t):
     else:
         t[0] = ['simd']
 
+# Return: List with a single string
 def p_clause_collapse(t):
     '''clause : COLLAPSE LPAREN INT RPAREN'''
     t[0] = ['collapse(' + t[3] + ')']
 
+# Return: Empty list
 def p_clause_independent(t):
     'clause : INDEPENDENT'
     t[0] = []
 
+# Return: List with a single string
 def p_clause_reduction(t):
     '''clause : REDUCTION LPAREN SUM COLON var_list RPAREN
               | REDUCTION LPAREN MUL COLON var_list RPAREN
@@ -164,6 +223,30 @@ def p_clause_reduction(t):
     # Transform the var_list into a unique string
     var_list = ", ".join(t[5])
     t[0] = ['reduction('+ t[3] + ':' + var_list + ')']
+
+# Return: List with a single string
+def p_clause_copy(t):
+    'clause : COPY LPAREN data_var_list RPAREN'
+    data_var_list = ", ".join(t[3])
+    t[0] = ['map(tofrom:' + data_var_list + ')']
+
+# Return: List with a single string
+def p_clause_copyin(t):
+    'clause : COPYIN LPAREN data_var_list RPAREN'
+    data_var_list = ", ".join(t[3])
+    t[0] = ['map(to:' + data_var_list + ')']
+
+# Return: List with a single string
+def p_clause_copyout(t):
+    'clause : COPYOUT LPAREN data_var_list RPAREN'
+    data_var_list = ", ".join(t[3])
+    t[0] = ['map(from:' + data_var_list + ')']
+
+# Return: List with a single string
+def p_clause_create(t):
+    'clause : COPYOUT LPAREN data_var_list RPAREN'
+    data_var_list = ", ".join(t[3])
+    t[0] = ['map(alloc:' + data_var_list + ')']
 
 def p_error(t):
     print("Syntax error at '%s'" % t.value)
