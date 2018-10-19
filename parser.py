@@ -12,6 +12,7 @@ import lexer as lexrules
 from lexer import tokens
 
 import sys
+import os
 
 # Parsing rules
 
@@ -20,13 +21,11 @@ precedence = (
     ('nonassoc','LOOP'),
     )
 
-######################## BEGIN AUXILIARIES PRODUCTIONS ########################
-
 def p_program(t):
     '''program : lines'''
     t[0] = t[1]
     #print(t[0])
-    print(" ".join(t[0]).replace('\n ', '\n').replace('  ', ' '))
+    t[0] =  "".join(t[0])
 
 #def p_structured_block_list(t):
 #    '''structured_block_list : structured_block structured_block_list
@@ -36,12 +35,17 @@ def p_program(t):
 #    else:
 #        t[0] = []
 
-def p_lines(t):
+# Return: List of string, each string is a line
+def p_lines_praga(t):
+    '''lines : pragma lines'''
+    t[0] = [" ".join(t[1]).replace("  ", " ")] + t[2]
+
+# Return: List of string, each string is a line
+def p_lines_ignored_line(t):
     '''lines : ignored_line lines
-             | pragma lines
              | '''
     if len(t) == 3:
-        t[0] = t[1] + t[2]
+        t[0] = ["".join(t[1])] + t[2]
     else:
         t[0] = []
 
@@ -52,6 +56,8 @@ def p_ignored_line(t):
 def p_anything(t):
     '''anything : OTHER anything
                 | ACC anything
+                | SCOP anything
+                | ENDSCOP anything
                 | PARALLEL anything
                 | KERNELS anything
                 | LOOP anything
@@ -63,6 +69,7 @@ def p_anything(t):
                 | COPY anything
                 | COPYIN anything
                 | COPYOUT anything
+                | GANG anything
                 | DATA anything
                 | CREATE anything
                 | INT anything
@@ -93,7 +100,22 @@ def p_anything(t):
 
 def p_pragma(t):
     'pragma : spaces BPRAGMA ACC construct EPRAGMA'
-    t[0] = t[1] + ['#pragma omp'] + t[4] + ['\n']
+    t[0] = []
+    for construct in t[4]:
+        t[0] += t[1] + ['#pragma omp'] + construct + ['\n']
+    print('Pragma')
+
+def p_pragma_scop(t):
+    'pragma : spaces BPRAGMA SCOP EPRAGMA'
+    t[0] = t[1] + ['#pragma scop'] + ['\n']
+    print('Pragma')
+
+def p_pragma_endscop(t):
+    'pragma : spaces BPRAGMA ENDSCOP EPRAGMA'
+    t[0] = t[1] + ['#pragma endscop'] + ['\n']
+    print('Pragma')
+
+######################## BEGIN AUXILIARIES PRODUCTIONS ########################
 
 def p_spaces(t):
     '''spaces : SPACE spaces
@@ -103,20 +125,44 @@ def p_spaces(t):
     else:
         t[0] = []
 
-# Return: List of strings, each string is a clause
+def p_varname(t):
+    '''var_name : ID
+                | ACC
+                | SCOP
+                | ENDSCOP
+                | PARALLEL
+                | KERNELS
+                | LOOP
+                | NUM_WORKERS
+                | VECTOR
+                | COLLAPSE
+                | REDUCTION
+                | INDEPENDENT
+                | COPY
+                | COPYIN
+                | COPYOUT
+                | CREATE
+                | GANG
+                | DATA'''
+    t[0] = t[1]
+
+# Return: Tuple, first element is a list of strings, each string is a clause and
+# second element is a dictionarie with where the key 'clause_name' get the 
+# clause parameter
 def p_clause_list(t):
     '''clause_list : clause
                    | clause_list clause'''
-    t[0] = []
-    if len(t) >= 2:
-        t[0] += t[1]
-    if len(t) >= 3:
-        t[0] += t[2]
+    if len(t) == 2:
+        t[0] = t[1]
+    if len(t) == 3:
+        new_dict = t[1][1].copy()
+        new_dict.update(t[2][1])
+        t[0] = (t[1][0]+t[2][0], new_dict)
 
 # Return: List of strings, each string is a variable
 def p_var_list(t):
-    '''var_list : ID
-                | var_list COMMA ID'''
+    '''var_list : var_name
+                | var_list COMMA var_name'''
     if len(t) == 2:
         t[0] = [t[1]]
     if len(t) == 4:
@@ -124,18 +170,19 @@ def p_var_list(t):
 
 # Return: String that represent the value
 def p_value(t):
-    '''value : ID 
+    '''value : var_name 
              | INT'''
     t[0] = t[1]
 
 # Return: String that represent the subarray
 def p_subarray(t):
-    '''subarray : ID LBRACKET value COLON value RBRACKET'''
+    '''subarray : var_name LBRACKET value COLON value RBRACKET
+                | subarray LBRACKET value COLON value RBRACKET'''
     t[0] = t[1] + '[' + t[3] + ':' + t[5] + ']'
 
 def p_data_var(t):
     '''data_var : subarray
-                | ID'''
+                | var_name'''
     t[0] = t[1]
 
 # Return: List of strings, each string is a variable or a subarray
@@ -149,66 +196,122 @@ def p_data_var_list(t):
 
 ############################# BEGIN CONTRUCTIONS #############################
 
+# Return: List of lists. Each list represents a construct and is a list of 
+# strings
 def p_construct_parallel_loop(t):
     '''construct : PARALLEL LOOP clause_list
                  | PARALLEL LOOP '''
     if len(t) == 4:
-        t[0] = ['parallel for'] + t[3]
+        t[0] = [['parallel for'] + t[3][0]]
+        has_copy = False
+        data_clauses = []
+        if 'copy' in t[3][1].keys():
+            data_clauses += ['map(tofrom:' + t[3][1]['copy'] + ')']
+            has_copy = True
+        if 'copyin' in t[3][1].keys():
+            data_clauses += ['map(to:' + t[3][1]['copyin'] + ')']
+            has_copy = True
+        if 'copyout' in t[3][1].keys():
+            data_clauses += ['map(from:' + t[3][1]['copyout'] + ')']
+            has_copy = True
+        if 'create' in t[3][1].keys():
+            data_clauses += ['map(alloc:' + t[3][1]['create'] + ')']
+            has_copy = True
+        if has_copy:
+            t[0] = [ ['target data'] + data_clauses ] + t[0]
+
     else:
-        t[0] = ['parallel for']
+        t[0] = [['parallel for']]
 
 
+# Return: List of lists. Each list represents a construct and is a list of 
+# strings
 def p_construct_parallel(t):
     '''construct : PARALLEL clause_list
                  | PARALLEL ''' 
     if len(t) == 3:
-        t[0] = ['parallel'] + t[2]
+        t[0] = [['parallel'] + t[2][0]]
+        has_copy = False
+        data_clauses = []
+        if 'copy' in t[2][1].keys():
+            data_clauses += ['map(tofrom:' + t[2][1]['copy'] + ')']
+            has_copy = True
+        if 'copyin' in t[2][1].keys():
+            data_clauses += ['map(to:' + t[2][1]['copyin'] + ')']
+            has_copy = True
+        if 'copyout' in t[2][1].keys():
+            data_clauses += ['map(from:' + t[2][1]['copyout'] + ')']
+            has_copy = True
+        if 'create' in t[2][1].keys():
+            data_clauses += ['map(alloc:' + t[2][1]['create'] + ')']
+            has_copy = True
+        if has_copy:
+            t[0] = [ ['target data'] + data_clauses ] + t[0]
     else:
-        t[0] = ['parallel']
+        t[0] = [['parallel']]
 
+# Return: List of lists. Each list represents a construct and is a list of 
+# strings
 def p_construct_loop(t):
     '''construct : LOOP clause_list
                  | LOOP '''
     if len(t) >= 3:
-        t[0] = ['for'] + t[2]
+        t[0] = [['for'] + t[2][0]]
+        if 'gang' in t[3][2].keys():
+            t[0] = [ ['teams'] ] + t[0]
     else:
-        t[0] = ['for']
+        t[0] = [['for']]
 
+# Return: List of lists. Each list represents a construct and is a list of 
+# strings
 def p_construct_data(t):
-    '''construct : DATA clause_list''' 
-    t[0] = ['target data'] + t[2]
-
-#def p_construct_kernels(t):
-#    'construct : KERNELS clause_list'
-#    t[0] = ['BLABLABLA'] + t[2]
+    '''construct : DATA clause_list
+                 | ''' 
+    if len(t) == 3:
+        t[0] = [['target data'] + t[2][0]]
+        if 'copy' in t[2][1].keys():
+            t[0][0] += ['map(tofrom:' + t[2][1]['copy'] + ')']
+        if 'copyin' in t[2][1].keys():
+            t[0][0] += ['map(to:' + t[2][1]['copyin'] + ')']
+        if 'copyout' in t[2][1].keys():
+            t[0][0] += ['map(from:' + t[2][1]['copyout'] + ')']
+        if 'create' in t[2][1].keys():
+            t[0][0] += ['map(alloc:' + t[2][1]['create'] + ')']
+    else:
+        t[0] = [['target data']]
 
 ################################ BEGIN CLAUSES ################################
 
-# Return: List with a single string
+# Return: Tuple, first element is a list with a single string and the second 
+# element is a dictionary where the key 'clause_name' get the clause parameter
 def p_clause_num_workers(t):
     'clause : NUM_WORKERS LPAREN INT RPAREN'
-    t[0] = ['num_threads(' + t[3] + ')']
+    t[0] = ( ['num_threads(' + t[3] + ')'], {'num_workers':t[3]} )
 
-# Return: List with a single string
+# Return: Tuple, first element is a list with a single string and the second 
+# element is a dictionary where the key 'clause_name' get the clause parameter
 def p_clause_vector(t):
     '''clause : VECTOR LPAREN INT RPAREN
               | VECTOR'''
     if len(t) == 5:
-        t[0] = ['simd simdlen(' + t[3] + ')']
+        t[0] = ( ['simd simdlen(' + t[3] + ')'], {'vector':t[3]} )
     else:
-        t[0] = ['simd']
+        t[0] = ( ['simd'], {'vector':None} )
 
-# Return: List with a single string
+# Return: Tuple, first element is a list with a single string and the second 
+# element is a dictionary where the key 'clause_name' get the clause parameter
 def p_clause_collapse(t):
     '''clause : COLLAPSE LPAREN INT RPAREN'''
-    t[0] = ['collapse(' + t[3] + ')']
+    t[0] = ( ['collapse(' + t[3] + ')'], {'collapse':t[3]} )
 
-# Return: Empty list
+# Return: Tuple, first element is a empty list and the second element is a 
+# dictionary where the key 'clause_name' get the clause parameter
 def p_clause_independent(t):
     'clause : INDEPENDENT'
-    t[0] = []
+    t[0] = ( [], {'independent':None} )
 
-# Return: List with a single string
+# Return: Tuple, first element is a list with a single string and the second 
+# element is a dictionary where the key 'clause_name' get the clause parameter
 def p_clause_reduction(t):
     '''clause : REDUCTION LPAREN SUM COLON var_list RPAREN
               | REDUCTION LPAREN MUL COLON var_list RPAREN
@@ -222,31 +325,48 @@ def p_clause_reduction(t):
 
     # Transform the var_list into a unique string
     var_list = ", ".join(t[5])
-    t[0] = ['reduction('+ t[3] + ':' + var_list + ')']
+    t[0] = ( ['reduction('+ t[3] + ':' + var_list + ')'], \
+            {'reduction':(t[3], var_list)} )
 
-# Return: List with a single string
+# Return: Tuple, first element is a empty list and the second element is a 
+# dictionary where the key 'clause_name' get the clause parameter
 def p_clause_copy(t):
     'clause : COPY LPAREN data_var_list RPAREN'
     data_var_list = ", ".join(t[3])
-    t[0] = ['map(tofrom:' + data_var_list + ')']
+    #t[0] = ['map(tofrom:' + data_var_list + ')']
+    t[0] = ( [], {'copy':data_var_list} )
 
-# Return: List with a single string
+# Return: Tuple, first element is a empty list and the second element is a 
+# dictionary where the key 'clause_name' get the clause parameter
 def p_clause_copyin(t):
     'clause : COPYIN LPAREN data_var_list RPAREN'
     data_var_list = ", ".join(t[3])
-    t[0] = ['map(to:' + data_var_list + ')']
+    #t[0] = ['map(to:' + data_var_list + ')']
+    t[0] = ( [], {'copyin':data_var_list} )
 
-# Return: List with a single string
+# Return: Tuple, first element is a empty list and the second element is a 
+# dictionary where the key 'clause_name' get the clause parameter
 def p_clause_copyout(t):
     'clause : COPYOUT LPAREN data_var_list RPAREN'
     data_var_list = ", ".join(t[3])
-    t[0] = ['map(from:' + data_var_list + ')']
+    #t[0] = ['map(from:' + data_var_list + ')']
+    t[0] = ( [], {'copyout':data_var_list} )
 
-# Return: List with a single string
+# Return: Tuple, first element is a empty list and the second element is a 
+# dictionary where the key 'clause_name' get the clause parameter
 def p_clause_create(t):
-    'clause : COPYOUT LPAREN data_var_list RPAREN'
+    'clause : CREATE LPAREN data_var_list RPAREN'
     data_var_list = ", ".join(t[3])
-    t[0] = ['map(alloc:' + data_var_list + ')']
+    #t[0] = ['map(alloc:' + data_var_list + ')']
+    t[0] = ( [], {'create':data_var_list} )
+
+# Return: Tuple, first element is a empty list and the second element is a 
+# dictionary where the key 'clause_name' get the clause parameter
+def p_clause_gang(t):
+    'clause : GANG'
+    data_var_list = ", ".join(t[3])
+    #t[0] = ['map(alloc:' + data_var_list + ')']
+    t[0] = ( [], {'gang':data_var_list} )
 
 def p_error(t):
     print("Syntax error at '%s'" % t.value)
@@ -279,18 +399,29 @@ if __name__ == '__main__':
                 print()
                 break
             s = s + "\n"
-            parser.parse(s)
+            result = parser.parse(s)
+            print(result)
 
     else:
 
         filename = sys.argv[1]
         with open(filename, 'r') as input_file:
             input_to_parse = input_file.read()
-        print("Input:")
-        print("---------------------------------------------------")
-        print(input_to_parse)
-        print("---------------------------------------------------")
-        print("Result:")
-        print("---------------------------------------------------")
-        parser.parse(input_to_parse)
-        print("---------------------------------------------------")
+
+        if len(sys.argv) == 2:
+            print("Input:")
+            print("---------------------------------------------------")
+            print(input_to_parse)
+            print("---------------------------------------------------")
+            print("Result:")
+            print("---------------------------------------------------")
+            result = parser.parse(input_to_parse)
+            print(result)
+            print("---------------------------------------------------")
+
+        else:
+            result = parser.parse(input_to_parse)
+            filename = sys.argv[2]
+            with open(filename, 'w') as output_file:
+                output_file.write(result)
+            os.chmod(filename, 0o666)

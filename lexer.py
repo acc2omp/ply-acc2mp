@@ -11,6 +11,8 @@ import sys
 # Tokens
 reserved = {
         'acc'         : 'ACC',
+        'scop'        : 'SCOP',
+        'endscop'     : 'ENDSCOP',
         'parallel'    : 'PARALLEL',
         'kernels'     : 'KERNELS',
         'loop'        : 'LOOP',
@@ -23,6 +25,7 @@ reserved = {
         'copyin'      : 'COPYIN',
         'copyout'     : 'COPYOUT',
         'create'      : 'CREATE',
+        'gang'        : 'GANG',
         'data'        : 'DATA'
 }
 tokens = [
