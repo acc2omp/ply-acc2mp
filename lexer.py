@@ -34,19 +34,16 @@ tokens = [
     'BPRAGMA',
     'EPRAGMA',
 
+# BASIC VALUES
     'INT',
     'ID',
-    'LPAREN',
-    'RPAREN',
-#    'LBRACE',
-#    'RBRACE',
-    'RBRACKET',
-    'LBRACKET',
-    'BACKSLASH',
+
+
+# WHITE SPACES
     'SPACE',
     'TAB',
 
-# OPERATIORS
+# OPERATORS
     'SUM',
     'MUL',
     'MAX',
@@ -55,11 +52,21 @@ tokens = [
     'BITWISE_OR',
     'AND',
     'OR',
+    'MODULE',
 
 # PUNCTUATION
-    'MODULE',
     'COLON',
     'COMMA',
+  
+# OTHER MARKS
+    'LPAREN',
+    'RPAREN',
+#    'LBRACE',
+#    'RBRACE',
+    'RBRACKET',
+    'LBRACKET',
+    'BACKSLASH',
+
     'OTHER'
     ] + list(reserved.values())
 

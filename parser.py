@@ -24,7 +24,6 @@ precedence = (
 def p_program(t):
     '''program : lines'''
     t[0] = t[1]
-    #print(t[0])
     t[0] =  "".join(t[0])
 
 #def p_structured_block_list(t):
@@ -38,7 +37,7 @@ def p_program(t):
 # Return: List of string, each string is a line
 def p_lines_praga(t):
     '''lines : pragma lines'''
-    t[0] = [" ".join(t[1]).replace("  ", " ")] + t[2]
+    t[0] = [" ".join(t[1]).replace("  ", " ").replace("\n ", "\n")] + t[2]
 
 # Return: List of string, each string is a line
 def p_lines_ignored_line(t):
@@ -55,43 +54,12 @@ def p_ignored_line(t):
 
 def p_anything(t):
     '''anything : OTHER anything
-                | ACC anything
-                | SCOP anything
-                | ENDSCOP anything
-                | PARALLEL anything
-                | KERNELS anything
-                | LOOP anything
-                | NUM_WORKERS anything
-                | VECTOR anything
-                | COLLAPSE anything
-                | REDUCTION anything
-                | INDEPENDENT anything
-                | COPY anything
-                | COPYIN anything
-                | COPYOUT anything
-                | GANG anything
-                | DATA anything
-                | CREATE anything
                 | INT anything
-                | ID anything
-                | LPAREN anything
-                | RPAREN anything
-                | RBRACKET anything
-                | LBRACKET anything
-                | BACKSLASH anything
-                | SPACE anything
-                | TAB anything
-                | SUM anything
-                | MUL anything
-                | MAX anything
-                | MIN anything
-                | BITWISE_AND anything
-                | BITWISE_OR anything
-                | AND anything
-                | OR anything
-                | MODULE anything
-                | COLON anything
-                | COMMA anything
+                | word anything
+                | other_mark anything
+                | whitespace anything
+                | operator anything
+                | ponctuation anything
                 | '''
     if len(t) == 3:
         t[0] = [t[1]] + t[2]
@@ -103,25 +71,102 @@ def p_pragma(t):
     t[0] = []
     for construct in t[4]:
         t[0] += t[1] + ['#pragma omp'] + construct + ['\n']
-    print('Pragma')
+    #print("Pragma 1")
 
 def p_pragma_scop(t):
     'pragma : spaces BPRAGMA SCOP EPRAGMA'
     t[0] = t[1] + ['#pragma scop'] + ['\n']
-    print('Pragma')
+    #print("Pragma 2")
 
 def p_pragma_endscop(t):
     'pragma : spaces BPRAGMA ENDSCOP EPRAGMA'
     t[0] = t[1] + ['#pragma endscop'] + ['\n']
-    print('Pragma')
+    #print("Pragma 3")
 
 ######################## BEGIN AUXILIARIES PRODUCTIONS ########################
 
 def p_spaces(t):
-    '''spaces : SPACE spaces
+    '''spaces : whitespace spaces
               | '''
     if len(t) == 3:
         t[0] = [' '] + t[2]
+    else:
+        t[0] = []
+
+def p_whitespace(t):
+    '''whitespace : SPACE
+                  | TAB'''
+    if len(t) == 2:
+        t[0] = t[1]
+
+def p_word(t):
+    '''word : ACC 
+            | SCOP 
+            | ENDSCOP 
+            | PARALLEL 
+            | KERNELS 
+            | LOOP 
+            | NUM_WORKERS 
+            | VECTOR 
+            | COLLAPSE 
+            | REDUCTION 
+            | INDEPENDENT 
+            | COPY 
+            | COPYIN 
+            | COPYOUT 
+            | CREATE 
+            | GANG 
+            | DATA 
+            | ID'''
+    if len(t) == 2:
+        t[0] = t[1]
+
+def p_operator(t):
+    '''operator : SUM 
+                | MUL 
+                | MAX 
+                | MIN 
+                | BITWISE_AND 
+                | BITWISE_OR 
+                | AND 
+                | OR 
+                | MODULE'''
+    if len(t) == 2:
+        t[0] = t[1]
+
+def p_ponctuation(t):
+    '''ponctuation : COLON 
+                   | COMMA'''
+    if len(t) == 2:
+        t[0] = t[1]
+
+def p_other_mark(t):
+    '''other_mark : LPAREN 
+                  | RPAREN 
+                  | RBRACKET 
+                  | LBRACKET 
+                  | BACKSLASH'''
+    if len(t) == 2:
+        t[0] = t[1]
+
+def p_between_other_mark(t):
+    '''between_other_marks : OTHER between_other_marks
+                           | INT between_other_marks
+                           | word between_other_marks
+                           | whitespace between_other_marks
+                           | operator between_other_marks
+                           | ponctuation between_other_marks
+                           | '''
+    if len(t) == 3:
+        t[0] = [t[1]] + t[2]
+    if len(t) == 1:
+        t[0] = []
+
+def p_possible_comma(t):
+    '''possible_comma : COMMA
+                      | '''
+    if len(t) == 2:
+        t[0] = [',']
     else:
         t[0] = []
 
@@ -151,13 +196,13 @@ def p_varname(t):
 # clause parameter
 def p_clause_list(t):
     '''clause_list : clause
-                   | clause_list clause'''
+                   | clause_list possible_comma clause'''
     if len(t) == 2:
         t[0] = t[1]
-    if len(t) == 3:
+    if len(t) == 4:
         new_dict = t[1][1].copy()
-        new_dict.update(t[2][1])
-        t[0] = (t[1][0]+t[2][0], new_dict)
+        new_dict.update(t[3][1])
+        t[0] = (t[1][0] + t[3][0], new_dict)
 
 # Return: List of strings, each string is a variable
 def p_var_list(t):
@@ -176,9 +221,9 @@ def p_value(t):
 
 # Return: String that represent the subarray
 def p_subarray(t):
-    '''subarray : var_name LBRACKET value COLON value RBRACKET
-                | subarray LBRACKET value COLON value RBRACKET'''
-    t[0] = t[1] + '[' + t[3] + ':' + t[5] + ']'
+    '''subarray : var_name LBRACKET between_other_marks RBRACKET
+                | subarray LBRACKET between_other_marks RBRACKET'''
+    t[0] = t[1] + '[' + "".join(t[3]) + ']'
 
 def p_data_var(t):
     '''data_var : subarray
@@ -257,7 +302,7 @@ def p_construct_loop(t):
                  | LOOP '''
     if len(t) >= 3:
         t[0] = [['for'] + t[2][0]]
-        if 'gang' in t[3][2].keys():
+        if 'gang' in t[2][1].keys():
             t[0] = [ ['teams'] ] + t[0]
     else:
         t[0] = [['for']]
@@ -364,9 +409,7 @@ def p_clause_create(t):
 # dictionary where the key 'clause_name' get the clause parameter
 def p_clause_gang(t):
     'clause : GANG'
-    data_var_list = ", ".join(t[3])
-    #t[0] = ['map(alloc:' + data_var_list + ')']
-    t[0] = ( [], {'gang':data_var_list} )
+    t[0] = ( [], {'gang':None} )
 
 def p_error(t):
     print("Syntax error at '%s'" % t.value)
